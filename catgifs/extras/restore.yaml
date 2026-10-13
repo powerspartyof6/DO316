@@ -1,0 +1,12 @@
+# Practice: restore the snapshot. Stop the VM first: virtctl stop catgif-vm -n catgifs
+apiVersion: snapshot.kubevirt.io/v1beta1
+kind: VirtualMachineRestore
+metadata:
+  name: catgif-vm-restore1
+  namespace: catgifs
+spec:
+  target:
+    apiGroup: kubevirt.io
+    kind: VirtualMachine
+    name: catgif-vm
+  virtualMachineSnapshotName: catgif-vm-snap1

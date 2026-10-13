@@ -1,0 +1,129 @@
+# Fedora VM that serves cat GIFs with httpd on port 80.
+# Boot disk is cloned from the "fedora" DataSource that OpenShift Virtualization
+# ships in openshift-virtualization-os-images. cloud-init installs httpd,
+# downloads GIFs from https://cataas.com at first boot, and rotates /cat.gif
+# every minute with a systemd timer.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: catgif-vm
+  namespace: catgifs
+  labels:
+    app: catgifs
+spec:
+  runStrategy: Always
+  instancetype:
+    kind: VirtualMachineClusterInstancetype
+    name: u1.small
+  preference:
+    kind: VirtualMachineClusterPreference
+    name: fedora
+  dataVolumeTemplates:
+    - metadata:
+        name: catgif-vm-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: fedora
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  template:
+    metadata:
+      labels:
+        app: catgifs
+        kubevirt.io/domain: catgif-vm
+    spec:
+      domain:
+        devices:
+          disks:
+            - name: rootdisk
+            - name: cloudinitdisk
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: catgif-vm-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              user: fedora
+              # Classroom-only console password. Change it, or replace it with
+              # ssh_authorized_keys and use `virtctl ssh`.
+              password: catgifs
+              chpasswd:
+                expire: false
+              packages:
+                - httpd
+              write_files:
+                - path: /usr/local/bin/catgifs
+                  permissions: "0755"
+                  content: |
+                    #!/bin/bash
+                    # catgifs fetch  - download GIFs and build index.html
+                    # catgifs rotate - copy a random GIF to /cat.gif
+                    set -u
+                    WEB=/var/www/html
+                    GIFS=$WEB/gifs
+                    COUNT=${CAT_COUNT:-12}
+                    mkdir -p "$GIFS"
+
+                    rotate() {
+                      pick=$(ls "$GIFS"/*.gif 2>/dev/null | shuf -n 1)
+                      [ -n "$pick" ] && cp -f "$pick" "$WEB/cat.gif.tmp" && mv -f "$WEB/cat.gif.tmp" "$WEB/cat.gif"
+                    }
+
+                    fetch() {
+                      for i in $(seq -w 1 "$COUNT"); do
+                        f=$GIFS/cat-$i.gif
+                        [ -s "$f" ] && continue
+                        curl -fsSL --max-time 60 -o "$f" "https://cataas.com/cat/gif" || rm -f "$f"
+                      done
+                      ls "$GIFS" | grep '\.gif$' | sed 's|^|/gifs/|' > "$WEB/cats.txt"
+                      {
+                        echo '<!doctype html><html><head><meta charset="utf-8"><title>Cat GIFs</title>'
+                        echo '<style>body{font-family:sans-serif;background:#111;color:#eee;text-align:center}img{max-width:300px;margin:8px;border-radius:8px}</style>'
+                        echo "</head><body><h1>Cat GIFs from $(hostname)</h1><p>Random cat: <a href=\"/cat.gif\">/cat.gif</a> | List: <a href=\"/cats.txt\">/cats.txt</a></p>"
+                        while read -r g; do echo "<img src=\"$g\" alt=\"cat\">"; done < "$WEB/cats.txt"
+                        echo '</body></html>'
+                      } > "$WEB/index.html"
+                      restorecon -R "$WEB" 2>/dev/null || true
+                      rotate
+                    }
+
+                    case "${1:-fetch}" in
+                      fetch) fetch ;;
+                      rotate) rotate ;;
+                      *) echo "usage: catgifs fetch|rotate" >&2; exit 1 ;;
+                    esac
+                - path: /etc/systemd/system/catgifs-rotate.service
+                  content: |
+                    [Unit]
+                    Description=Rotate /cat.gif
+
+                    [Service]
+                    Type=oneshot
+                    ExecStart=/usr/local/bin/catgifs rotate
+                - path: /etc/systemd/system/catgifs-rotate.timer
+                  content: |
+                    [Unit]
+                    Description=Rotate /cat.gif every minute
+
+                    [Timer]
+                    OnBootSec=1min
+                    OnUnitActiveSec=1min
+
+                    [Install]
+                    WantedBy=timers.target
+              runcmd:
+                - /usr/local/bin/catgifs fetch
+                - systemctl daemon-reload
+                - systemctl enable --now httpd catgifs-rotate.timer

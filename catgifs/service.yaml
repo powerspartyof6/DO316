@@ -1,0 +1,17 @@
+# Selects the virt-launcher pod through the labels in the VM template.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catgifs
+  namespace: catgifs
+  labels:
+    app: catgifs
+spec:
+  type: ClusterIP
+  selector:
+    kubevirt.io/domain: catgif-vm
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

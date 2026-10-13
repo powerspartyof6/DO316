@@ -1,0 +1,11 @@
+# Practice: snapshot the VM. Needs a storage class with a VolumeSnapshotClass.
+apiVersion: snapshot.kubevirt.io/v1beta1
+kind: VirtualMachineSnapshot
+metadata:
+  name: catgif-vm-snap1
+  namespace: catgifs
+spec:
+  source:
+    apiGroup: kubevirt.io
+    kind: VirtualMachine
+    name: catgif-vm

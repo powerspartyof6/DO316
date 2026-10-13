@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: catgifs
+  namespace: catgifs
+  labels:
+    app: catgifs
+spec:
+  to:
+    kind: Service
+    name: catgifs
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow

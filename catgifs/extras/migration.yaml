@@ -1,0 +1,9 @@
+# Practice: live migrate the running VMI to another node.
+# Needs an RWX-capable root disk and at least two schedulable workers.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstanceMigration
+metadata:
+  generateName: catgif-vm-migration-
+  namespace: catgifs
+spec:
+  vmiName: catgif-vm
